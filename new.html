@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered Travel Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            width: 95%;
+            margin: 20px auto;
+            background-color: white;
+            padding: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            border-radius: 12px;
+        }
+        .markdown-output {
+            line-height: 1.75;
+        }
+        .markdown-output h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: #1e40af; /* Blue-700 */
+            border-bottom: 2px solid #bfdbfe; /* Blue-100 */
+            padding-bottom: 4px;
+        }
+        .markdown-output h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            color: #374151; /* Gray-700 */
+        }
+        .markdown-output p, .markdown-output ul, .markdown-output ol {
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+        }
+        .markdown-output ul {
+            list-style-type: disc;
+        }
+        .loading-ring {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header class="text-center mb-6">
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">AI Travel Itinerary Generator</h1>
+        <p class="text-lg text-gray-500">Let Gemini plan your next detailed, day-by-day adventure.</p>
+    </header>
+
+    <div id="input-form" class="bg-gray-50 p-6 rounded-lg shadow-inner mb-8">
+        <div class="flex flex-col md:flex-row gap-4">
+            <input type="text" id="destination" placeholder="Destination (e.g., New Delhi, India)"
+                   class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-700"
+                   value="New Delhi">
+            <input type="number" id="duration" placeholder="Duration (days)"
+                   class="w-full md:w-32 p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-700"
+                   value="3" min="1">
+            <button id="generate-btn"
+                    class="bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 transition duration-150 ease-in-out disabled:opacity-50 flex items-center justify-center">
+                Generate Itinerary
+            </button>
+        </div>
+        <p class="text-sm text-red-500 mt-2 hidden" id="error-message"></p>
+    </div>
+
+    <div id="output-area" class="min-h-32 p-6 bg-white border border-gray-200 rounded-lg">
+        <div id="loading" class="hidden flex justify-center items-center h-full min-h-32">
+            <div class="loading-ring mr-3"></div>
+            <span class="text-lg font-medium text-blue-600">Generating your customized itinerary...</span>
+        </div>
+        <div id="itinerary-content" class="markdown-output">
+            <p class="text-center text-gray-500 italic">Your detailed travel plan will appear here after generation.</p>
+        </div>
+        <div id="sources" class="mt-4 pt-4 border-t border-gray-100 hidden">
+            <h3 class="text-sm font-semibold text-gray-600 mb-2">Sources (Grounding):</h3>
+            <ul id="source-list" class="text-xs text-gray-500 space-y-1"></ul>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Markdown to HTML Conversion Utility ---
+    // A simple, secure Markdown parser for the itinerary
+    const mdToHtml = (markdown) => {
+        let html = markdown
+            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+            .replace(/^\* (.*$)/gim, '<li>$1</li>')
+            .replace(/^\- (.*$)/gim, '<li>$1</li>')
+            .replace(/^(\d+\. )(.*$)/gim, '<li>$2</li>'); // Simple ordered list handling
+
+        // Wrap list items if necessary (this is a simplified approach)
+        if (html.includes('<li>')) {
+            html = html.replace(/<\/ul>\s*<ul>/g, '').replace(/<\/ol>\s*<ol>/g, '');
+            if (!html.match(/^<ul>/i) && !html.match(/^<ol>/i)) {
+                 html = `<ul>${html}</ul>`;
+            }
+        }
+
+        html = html
+            .replace(/<ul>(.*?)<\/ul>/gs, '<ul>$1</ul>')
+            .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+            .replace(/_(.*?)_/gim, '<em>$1</em>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" class="text-blue-500 hover:text-blue-700 underline">$1</a>')
+            .replace(/\n/g, '<br>');
+
+        // Cleanup multiple <br> tags
+        html = html.replace(/<br>\s*<br>/g, '<br><br>');
+
+        return html;
+    };
+
+
+    // --- Core Application Logic ---
+
+    const destinationInput = document.getElementById('destination');
+    const durationInput = document.getElementById('duration');
+    const generateBtn = document.getElementById('generate-btn');
+    const itineraryContent = document.getElementById('itinerary-content');
+    const loadingDiv = document.getElementById('loading');
+    const errorMsg = document.getElementById('error-message');
+    const sourcesDiv = document.getElementById('sources');
+    const sourceList = document.getElementById('source-list');
+
+    // --- Gemini API Configuration ---
+    const apiKey = ""; // API key placeholder
+    const modelName = "gemini-2.5-flash-preview-09-2025";
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+    const systemPrompt = `You are a helpful, creative, and world-class travel planner. Your task is to generate a highly detailed, structured, and customized travel itinerary based on the user's request, using real-time information. The response MUST be formatted strictly in Markdown.
+
+For each day of the trip, you must include the following specific sections:
+1.  **Day Overview:** A brief, exciting summary of the day's theme.
+2.  **Accommodation/Stay:** Suggest a type of stay for the destination (e.g., Boutique Hotel, Heritage Homestay, Local Airbnb).
+3.  **Morning Activity:** A specific, famous local place or landmark to visit.
+4.  **Afternoon Activity:** A cultural or historical activity, including transportation recommendations.
+5.  **Evening Activity:** A recommendation for local food, a market visit, or a cultural show.
+6.  **Local Expertise:** A clear recommendation on whether a local **Tour Guide** is useful for the main activities of that day (Yes/No, and why).
+
+Generate a full itinerary for the requested duration and destination.`;
+
+    // --- API Call with Exponential Backoff ---
+    async function fetchWithBackoff(url, options, maxRetries = 5) {
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                const response = await fetch(url, options);
+                if (response.status !== 429) { // 429 is Too Many Requests
+                    return response;
+                }
+                // Log and wait for backoff
+                console.warn(`Rate limit hit (429). Retrying in ${Math.pow(2, i)} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+            } catch (error) {
+                if (i === maxRetries - 1) throw error;
+                console.error(`Fetch failed on attempt ${i + 1}:`, error);
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+            }
+        }
+        throw new Error('API request failed after multiple retries due to rate limiting.');
+    }
+
+    async function generateItinerary() {
+        const destination = destinationInput.value.trim();
+        const duration = parseInt(durationInput.value);
+
+        // Input Validation
+        if (!destination || duration < 1 || isNaN(duration)) {
+            errorMsg.textContent = 'Please enter a valid destination and duration (minimum 1 day).';
+            errorMsg.classList.remove('hidden');
+            return;
+        }
+        errorMsg.classList.add('hidden');
+
+        // UI State: Loading
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = '<div class="loading-ring mr-3"></div> Generating...';
+        itineraryContent.innerHTML = '';
+        loadingDiv.classList.remove('hidden');
+        sourcesDiv.classList.add('hidden');
+
+        const userQuery = `Create a ${duration}-day travel itinerary for ${destination}.`;
+
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            // Enable Google Search for grounded, up-to-date information
+            tools: [{ "google_search": {} }],
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            },
+        };
+
+        const options = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        };
+
+        try {
+            const response = await fetchWithBackoff(apiUrl, options);
+            const result = await response.json();
+
+            const candidate = result.candidates?.[0];
+
+            if (candidate && candidate.content?.parts?.[0]?.text) {
+                const text = candidate.content.parts[0].text;
+                const html = mdToHtml(text);
+                itineraryContent.innerHTML = html;
+
+                // Extract and display grounding sources
+                let sources = [];
+                const groundingMetadata = candidate.groundingMetadata;
+
+                if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                    sources = groundingMetadata.groundingAttributions
+                        .map(attribution => ({
+                            uri: attribution.web?.uri,
+                            title: attribution.web?.title,
+                        }))
+                        .filter(source => source.uri && source.title); // Ensure sources are valid
+                }
+
+                if (sources.length > 0) {
+                    sourceList.innerHTML = sources.map((source, index) =>
+                        `<li>${index + 1}. <a href="${source.uri}" target="_blank" class="hover:underline">${source.title}</a></li>`
+                    ).join('');
+                    sourcesDiv.classList.remove('hidden');
+                } else {
+                    sourcesDiv.classList.add('hidden');
+                }
+
+            } else {
+                itineraryContent.innerHTML = `<p class="text-red-500 font-semibold">Error: The AI could not generate a response. Please try a different query.</p>`;
+                console.error("API response structure unexpected:", result);
+            }
+
+        } catch (error) {
+            itineraryContent.innerHTML = `<p class="text-red-500 font-semibold">An error occurred: ${error.message}. Please check your network connection or API setup.</p>`;
+            console.error("Fetch error:", error);
+        } finally {
+            // UI State: Finished
+            loadingDiv.classList.add('hidden');
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = 'Generate Itinerary';
+        }
+    }
+
+    generateBtn.addEventListener('click', generateItinerary);
+
+    // Initial load: Add focus to destination
+    window.onload = () => {
+        destinationInput.focus();
+    };
+</script>
+</body>
+</html>
