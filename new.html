@@ -147,7 +147,7 @@
     const sourceList = document.getElementById('source-list');
 
     // --- Gemini API Configuration ---
-    const apiKey = ""; // API key placeholder
+    const apiKey = "const API_KEY = import.meta.env.VITE_API_KEY;"; // API key placeholder
     const modelName = "gemini-2.5-flash-preview-09-2025";
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
